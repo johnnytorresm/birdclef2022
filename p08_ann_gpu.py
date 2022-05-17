@@ -75,6 +75,9 @@ import random
 
 print('Libraries have been imported')
 
+# Reading metadata information
+train_md = pd.read_csv('../input/birdclef-2022/train_metadata.csv')
+train_md.head()
 
 # ### Selecting the species for the competition
 
