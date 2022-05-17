@@ -1,0 +1,343 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Project Nº 8 - Kaggle Competition - BirdCLEF 2022
+
+# ## Student : Johnny TORRES
+# ## Mentor: Julien Héduik
+
+# ## Import libraries
+
+# In[459]:
+
+
+# Import all the required libraries.
+
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from numpy import argmax
+import ast
+
+import librosa
+import librosa.display
+import os
+import os.path
+from os import path
+from os.path import exists
+
+import IPython.display as ipd
+import soundfile as sf
+
+import sklearn
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+
+get_ipython().run_line_magic('matplotlib', 'inline')
+import matplotlib.pyplot as plt
+
+import random
+
+from PIL import Image
+import pathlib
+import csv 
+
+# Keras
+import keras
+from keras import layers
+from keras.models import Sequential
+from keras.layers import Activation, Dense, Dropout, Conv2D, Flatten, MaxPooling2D, BatchNormalization
+from keras.layers import GlobalMaxPooling2D, GlobalAveragePooling1D, AveragePooling2D, Input, Add
+from tensorflow.keras.optimizers import Adam
+from keras import backend as K
+import tensorflow as tf
+
+# Import necessary libraries for metrics
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import precision_score
+from sklearn.metrics import recall_score
+from sklearn.metrics import f1_score
+
+from datetime import datetime
+
+import warnings
+warnings.filterwarnings('ignore')
+
+import random
+
+print('Libraries have been imported')
+
+
+# ## Functions
+
+# In[367]:
+
+
+def get_all_labels(bird, filename):
+    
+    search_key = bird + '/' + filename
+    
+    primary_label = train_md.loc[train_md['filename'] == search_key]['primary_label'].tolist()
+    secondary_labels = train_md.loc[train_md['filename'] == search_key]['secondary_labels'].values
+    
+    if len(primary_label)==0:
+        primary_label = [bird]
+        
+    if len(secondary_labels)==0:
+        secondary_labels = []
+    else:
+        secondary_labels = ast.literal_eval(secondary_labels[0])
+    
+    all_labels = primary_label + secondary_labels
+
+    return all_labels
+    
+print('Functions have been defined')
+
+# ## MODELING 
+
+# ### Data augmentation
+
+# In[97]:
+
+
+bss.info()
+
+
+# In[98]:
+
+
+# Counting number of sound files to augment per species
+
+median_files = (np.median(bss['No_of_samples']))
+bss['No_Missing'] = bss['No_of_samples'].apply(lambda x : int(x - median_files) if x < median_files else 0)
+bss
+
+
+# In[103]:
+
+
+# Media augmentation is used only in species which
+# the number of files is below the median
+
+now = datetime.now()
+current_time = now.strftime("%H:%M:%S")
+print('Sound data augmentation started...\n')
+print("Begin =", current_time, "\n")
+
+for k in range(0,bss.shape[0]):
+    nf = int(bss["No_Missing"].iloc[k])
+    if nf < 0:
+        now = datetime.now()
+        current_time = now.strftime("%H:%M:%S")
+        nf = np.abs(nf)
+        b = bss["Species"].iloc[k]
+        print('Species ', b, ' augmenting ', nf, ' files - ', current_time)
+        dirlist = os.listdir(f'./train_audio/{b}')
+        for i in range(0, nf):
+            nf = np.random.randint(low=0, high=len(dirlist))
+            readfile = f'./train_audio/{b}/' + dirlist[nf]
+            augfile = 'aug_'+ b + str(i) + '.wav'
+            signal, sr = librosa.load(readfile)
+            type_of_augmentation = random.randint(1,3)
+            if type_of_augmentation==1:
+                augmented_signal = librosa.effects.time_stretch(signal, rate=np.random.random())
+            elif type_of_augmentation==2:
+                augmented_signal = np.roll(signal,int(sr/10))
+            else:
+                augmented_signal = librosa.effects.pitch_shift(signal,sr,n_steps=random.randint(-5,5))
+                
+            sf.write(f'./train_audio/{b}/' + augfile, augmented_signal, sr)
+                
+now = datetime.now()
+current_time = now.strftime("%H:%M:%S")
+print('Sound data augmentation ended...')
+print("End =", current_time, "\n")
+
+
+# ### Feature Extraction
+
+# In[380]:
+
+
+# Header for the datafrane containing all features
+
+header = ['species', 
+          'filename',
+          'rms',
+          'chroma_stft', 
+          'chroma_cqt', 
+          'chroma_cens',
+          'mel_spct'
+         ]
+
+for i in range(1, 21):
+    header += [f'mfcc{i}']
+
+header += ['spec_cent',
+           'spec_bw',
+           'spec_con',
+           'spec_flt',
+           'rolloff',
+           'tonnetz',
+           'zcr'
+          ]
+
+f = header[2:]
+header += ['label']
+
+birds_df = pd.DataFrame(columns = header)
+
+for float_field in f:
+    birds_df[float_field] = birds_fe[float_field].astype(float, errors = 'raise')
+
+birds_df.info(verbose=1)
+
+
+# ### Extracting features using librosa
+
+# In[387]:
+
+
+# Browsing all data to extract features. Only scored birds will be considered.
+# This processs takes some time to complete
+
+print('Feature extraction process.. takes a while to complete...\n')
+now = datetime.now()
+current_time = now.strftime("%H:%M:%S")
+print("Begin =", current_time)
+
+birds_data = []   # Temporary list to containt all features as they are extracted
+
+# for bird in birds:   # only selected birds for the competition
+for bird in ['akiapo']:
+    now = datetime.now()
+    current_time = now.strftime("%H:%M:%S")
+    print('Processing species: ', bird, ' at ', current_time)
+    
+    for filename in os.listdir(f'./train_audio/{bird}'):
+    
+        # Feature extraction
+        songname = f'./train_audio/{bird}/{filename}'
+        y, sr = librosa.load(songname, mono=True, duration=60)
+        rms = librosa.feature.rms(y=y)
+        chroma_stft = librosa.feature.chroma_stft(y=y, sr=sr)
+        chroma_cqt = librosa.feature.chroma_cqt(y=y, sr=sr)
+        chroma_cens = librosa.feature.chroma_cens(y=y, sr=sr)
+        mel_spct = librosa.feature.melspectrogram(y=y, sr=sr)
+        mfcc = librosa.feature.mfcc(y=y, sr=sr)
+        spec_cent = librosa.feature.spectral_centroid(y=y, sr=sr)
+        spec_bw = librosa.feature.spectral_bandwidth(y=y, sr=sr)
+        spec_con = librosa.feature.spectral_contrast(y=y, sr=sr)
+        spec_flt = librosa.feature.spectral_flatness(y=y)
+        rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)
+        tonnetz = librosa.feature.tonnetz(y=y, sr=sr)
+        zcr = librosa.feature.zero_crossing_rate(y)
+        
+        new_row = [bird, 
+                   filename, 
+                   np.mean(rms),
+                   np.mean(chroma_stft),
+                   np.mean(chroma_cqt),
+                   np.mean(chroma_cens),
+                   np.mean(mel_spct)
+                  ]
+        
+        for e in mfcc:
+            new_row.append(np.mean(e))
+            
+        new_row.append(np.mean(spec_cent))
+        new_row.append(np.mean(spec_bw))
+        new_row.append(np.mean(spec_con))
+        new_row.append(np.mean(spec_flt))
+        new_row.append(np.mean(rolloff))
+        new_row.append(np.mean(tonnetz))
+        new_row.append(np.mean(zcr))
+        
+        new_row.append(bird)
+        
+        birds_data.append(new_row)         
+
+# Creating the dataframe containing the extracted features
+birds_df = pd.DataFrame(birds_data, columns = header)
+birds_df.to_csv(r'./birds_df.csv', index = False)
+
+now = datetime.now()
+current_time = now.strftime("%H:%M:%S")
+print("End =", current_time)
+
+print('\nFeatures extracted and saved to disk...\n')
+
+birds_df.head()
+
+# Dropping features
+if 'species' in data.columns:
+    data.drop(columns=['species'], inplace=True)
+if 'filename' in data.columns:
+    data.drop(columns=['filename'], inplace=True)
+
+data.head()
+
+# Encoding the Labels
+genre_list = data.iloc[:, -1]
+encoder = LabelEncoder()
+
+# Fittng the data
+y = encoder.fit_transform(genre_list)
+
+# Scaling the Feature columns
+scaler = StandardScaler()
+X = scaler.fit_transform(np.array(data.iloc[:, :-1], dtype = float))
+
+X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.15, random_state=1)
+X_train, X_test, y_train, y_test = train_test_split(X_train, y_train, test_size=0.2, random_state=1)
+
+print('Trainining, validation and test datasets have been created...')
+
+# LGBMClassifier
+from lightgbm import LGBMClassifier
+
+now = datetime.now()
+start = now.strftime("%H:%M:%S")
+print("start =", start)
+
+model_lgb = LGBMClassifier(max_depth=5,
+                           learning_rate=0.00001,
+                           n_estimators=1000,
+                           n_jobs=-1,
+                           random_state=0,
+                           reg_alpha=0.2,
+                           colsample_bytree=0.5,
+                           force_col_wise=True,
+                           num_leaves=64,
+                           num_class=21,
+                           verbose=-1
+                          )
+
+classifier_lgb = model_lgb.fit(X_train, y_train)
+
+# predicting labels
+y_pred = model_lgb.predict(X_test)
+
+# accuracy: (tp + tn) / (p + n)
+accuracy = accuracy_score(y_test, y_pred)
+print('Accuracy: %f' % accuracy)
+
+# precision tp / (tp + fp)
+precision = precision_score(y_test, y_pred, average='micro')
+print('Precision: %f' % precision)
+
+# recall: tp / (tp + fn)
+recall = recall_score(y_test, y_pred, average='micro')
+print('Recall: %f' % recall)
+
+# f1: 2 tp / (2 tp + fp + fn)
+f1 = f1_score(y_test, y_pred, average='micro')
+print('F1 score: %f' % f1)
+
+now = datetime.now()
+finish = now.strftime("%H:%M:%S")
+print("end =", finish)
+
+print('Ready')
+
