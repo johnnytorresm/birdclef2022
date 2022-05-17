@@ -21,3 +21,7 @@ Repository of code for Kaggle's competition BirdCLEF2022
 ###  |
 ###  +---------------> final: final code before presenting the project to OpenClassrooms
 #
+### Input dataFfles are available at the following link:
+###
+### /kaggle/input/birdclef-2022/
+
