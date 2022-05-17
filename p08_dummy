@@ -1,0 +1,152 @@
+# This Python 3 environment comes with many helpful analytics libraries installed
+# It is defined by the kaggle/python Docker image: https://github.com/kaggle/docker-python
+# For example, here's several helpful packages to load
+
+import numpy as np # linear algebra
+import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
+
+# Input data files are available in the read-only "../input/" directory
+# For example, running this (by clicking run or pressing Shift+Enter) will list all files under the input directory
+
+import os
+for dirname, _, filenames in os.walk('/kaggle/input'):
+    for filename in filenames:
+        print(os.path.join(dirname, filename))
+
+# You can write up to 20GB to the current directory (/kaggle/working/) that gets preserved as output when you create a version using "Save & Run All" 
+# You can also write temporary files to /kaggle/temp/, but they won't be saved outside of the current session
+# Import all the required libraries.
+
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from numpy import argmax
+
+import librosa
+import librosa.display
+import os
+import os.path
+from os import path
+
+import IPython.display as ipd
+
+import sklearn
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+
+%matplotlib inline
+import matplotlib.pyplot as plt
+
+import random
+
+import soundfile as sf
+
+from PIL import Image
+import pathlib
+import csv
+
+# Keras
+import keras
+from keras import layers
+from keras.models import Sequential
+from keras.layers import Activation, Dense, Dropout, Conv2D, Flatten, MaxPooling2D
+from keras.layers import GlobalMaxPooling2D, GlobalAveragePooling1D, AveragePooling2D, Input, Add
+import tensorflow as tf
+
+# Import necessary libraries for metrics
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import precision_score
+from sklearn.metrics import recall_score
+from sklearn.metrics import f1_score
+
+from datetime import datetime
+
+import warnings
+warnings.filterwarnings('ignore')
+
+import random
+
+print('Libraries have been imported')
+
+# Selecting the 21 species for the competition
+# contained in the file scored_birds.json provided by Kaggle
+
+import json
+ 
+# Opening JSON file
+f = open('/kaggle/input/birdclef-2022/scored_birds.json')
+ 
+# returns JSON object as a dictionary
+birds = json.load(f)
+
+birds.remove('maupar')
+ 
+print(birds)
+
+# Part 1:
+
+# Directory where sound files have been placed
+test_audio_dir = '/kaggle/input/birdclef-2022/test_soundscapes/'
+
+# All sound files will be splitted into 5-second chunks
+chunk_size = 5   
+
+# Getting all the file names from directory
+file_list = [f.split('.')[0] for f in sorted(os.listdir(test_audio_dir))]
+print('Number of test soundscapes found:', len(file_list))
+
+# This is where results are stored before writing the submission file
+dict_pred = {'row_id': [], 'target': []}
+
+# Part 2:
+
+# Traverse all files inside the folder and make chunks of each audio file
+for afile in file_list: 
+    file_path = test_audio_dir + afile + '.ogg'
+    print(f"Making chunks of size {chunk_size}s of file: {afile}")
+
+    # Load the file
+    sig, sr = librosa.load(file_path)
+    
+    # Get number of samples for <chunk_size> seconds
+    buffer = chunk_size * sr
+    samples_total = len(sig)
+    samples_wrote = 0
+    
+    counter = 1
+    
+    # each file is chopped up into several chunks.
+    # each chunk is preprocessed and its features extracted to make a prediction
+    while samples_wrote < samples_total:
+        # check if the buffer is not exceeding total samples 
+        if buffer > (samples_total - samples_wrote):
+            buffer = samples_total - samples_wrote
+
+        chunk = sig[samples_wrote : (samples_wrote + buffer)]
+        chunk_end_time = counter * 5
+        
+        # and predicting labels
+        chunk_pred = 'maupar' # Dummy prediction
+        
+        for bird in birds:
+            row_id = afile + '_' + bird + '_' + str(chunk_end_time)
+            
+            # Put the result into our prediction dict and 
+            # apply a "confidence" threshold of 0.5
+            dict_pred['row_id'].append(row_id)
+            dict_pred['target'].append(True if chunk_pred == bird else False)
+
+        # next chunk
+        counter += 1
+        samples_wrote += buffer
+
+# Part 03
+
+# All sound files have been now splitted and the chunks, predicted.
+# With the resulting dictionary make a new data frame and look at some results
+
+results = pd.DataFrame(dict_pred, columns = ['row_id', 'target'])
+    
+# Convert results to csv
+results.to_csv("/kaggle/working/submission.csv", index=False)
+print('Results have been submitted')
